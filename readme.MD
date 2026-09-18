@@ -24,6 +24,18 @@ This example demonstrates how to create a fundraising for SPL Tokens.
 
 In this example, a user will be able to create a fundraiser account, where he will be specify the mint he wants to collect and the fundraising target.
 
+##### THIS SECTION OUTLINE WHAT THE FEATURE NFT CHANGE IS, IT'S COST, A BRIEF DEFENSE OF WHY I TOOK THIS APPROACH TO PREVENT SOMEONE BYPASSING THE REFUND ######
+
+WHAT IT DOES — a first contribution mints a one-of-one receipt NFT to the contributor
+
+COST — rent (~0.0015 SOL for the mint, ~0.002 SOL for the ATA) + compute for init + mint_to
+
+WHY I TOOK THIS APPORACH:   The mint authority remains the fundraiser PDA because init_if_needed re-validates the mint::authority constraint on every contribution. Setting it to None after the first mint would cause all subsequent contributions to fail ConstraintMintMintAuthority. The one-of-one property is enforced by the receipt_minted flag, not by burning the authority. An attacker cannot mint additional receipts: the only instruction that calls mint_to is contribute, and that path is guarded by receipt_minted. The contributor cannot craft a transaction that bypasses this because the receipt mint's address is a PDA derived from seeds they don't control, and the mint authority is a PDA only the program can sign for.
+
+REFUND BYPASS: On refund, we chose to leave the receipt in the contributor's wallet. Burning is unenforceable — a contributor can transfer the receipt to another wallet before calling refund, defeating any burn-on-refund logic. The receipt is a historical record of backing, not a live claim on funds.
+
+
+
 ---
 
 ## Let's walk through the architecture:
