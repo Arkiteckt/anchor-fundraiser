@@ -26,13 +26,23 @@ In this example, a user will be able to create a fundraiser account, where he wi
 
 ##### THIS SECTION OUTLINE WHAT THE FEATURE NFT CHANGE IS, IT'S COST, A BRIEF DEFENSE OF WHY I TOOK THIS APPROACH TO PREVENT SOMEONE BYPASSING THE REFUND ######
 
-WHAT IT DOES — a first contribution mints a one-of-one receipt NFT to the contributor
+WHAT IT DOES:
 
-COST — rent (~0.0015 SOL for the mint, ~0.002 SOL for the ATA) + compute for init + mint_to
+On a contributor's first contribution to a campaign, the program mints them a one-of-one receipt NFT. The receipt is a 0-decimal SPL token with a supply of 1, held in the contributor's wallet. It proves they backed this campaign.
 
-WHY I TOOK THIS APPORACH:   The mint authority remains the fundraiser PDA because init_if_needed re-validates the mint::authority constraint on every contribution. Setting it to None after the first mint would cause all subsequent contributions to fail ConstraintMintMintAuthority. The one-of-one property is enforced by the receipt_minted flag, not by burning the authority. An attacker cannot mint additional receipts: the only instruction that calls mint_to is contribute, and that path is guarded by receipt_minted. The contributor cannot craft a transaction that bypasses this because the receipt mint's address is a PDA derived from seeds they don't control, and the mint authority is a PDA only the program can sign for.
+HOW IT WORKS:
 
-REFUND BYPASS: On refund, we chose to leave the receipt in the contributor's wallet. Burning is unenforceable — a contributor can transfer the receipt to another wallet before calling refund, defeating any burn-on-refund logic. The receipt is a historical record of backing, not a live claim on funds.
+A new PDA [b"receipt", fundraiser, contributor] holds the mint. The mint's authority is the fundraiser PDA. The Contributor account gains a receipt_minted: bool field. Inside contribute, after the transfer and total update, an if !receipt_minted guard mints 1 token to the contributor's receipt ATA, then sets the flag. The flag makes the mint idempotent — no matter how many times a contributor contributes, the receipt mints exactly once.
+
+WHAT IT COSTS:
+
+~0.00146 SOL rent for the mint account, ~0.00204 SOL for the receipt ATA, paid by the contributor. Roughly +15k compute units for the init_if_needed + mint_to on the first contribution, ~0 on subsequent contributions (the guard skips the block).
+
+MY APPROACH:
+
+The mint authority remains the fundraiser PDA rather than being set to None. This is because init_if_needed re-validates the mint::authority constraint on every contribution, and burning the authority after the first mint causes every subsequent contribution to fail with ConstraintMintMintAuthority. The one-of-one property is enforced by the receipt_minted flag, not by burning the authority. An attacker cannot mint additional receipts because the only instruction that calls mint_to is contribute, guarded by receipt_minted, and the mint's authority is a PDA only the program can sign for. The honest weakness: the authority technically still exists, so a future program upgrade could theoretically mint more. This is a promise, not a cryptographic guarantee. We chose it over a broken contribute path.
+
+On refund, the receipt stays in the contributor's wallet. Burning is unenforceable — a contributor can transfer the receipt to another wallet before calling refund, defeating any burn-on-refund logic. We chose to leave it as a historical record rather than a rule we cannot enforce.
 
 
 
