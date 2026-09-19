@@ -226,11 +226,83 @@ it("Contribute to Fundraiser", async () => {
     }
     
   });
+
   it("mints a one-of-one receipt on first contribution", async () => {
   const mintInfo = await getMint(provider.connection, receiptMint);
 
   assert.equal(mintInfo.supply.toString(), "1");  // exactly one
   assert.equal(mintInfo.decimals, 0);             // can't split
   assert.equal(mintInfo.mintAuthority.toBase58(), fundraiser.toBase58());         //  the authority is now the fundraiser PDA
+
+  // idempotency proof — the mint fires exactly once no matter how many contributions come in.
+  it("does not mint a second receipt on second contribution", async () => {
+  const supplyBefore = (await getMint(provider.connection, receiptMint)).supply;
+
+  // Contribute again
+  const vault = getAssociatedTokenAddressSync(mint, fundraiser, true);
+  await program.methods
+    .contribute(new anchor.BN(1000000))
+    .accountsPartial({
+      contributor: provider.publicKey,
+      fundraiser,
+      contributorAccount: contributor,
+      contributorAta: contributorATA,
+      vault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      receiptMint,
+      receiptAta,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    })
+    .rpc();
+
+  const supplyAfter = (await getMint(provider.connection, receiptMint)).supply;
+  assert.equal(supplyAfter.toString(), supplyBefore.toString());
+  assert.equal(supplyAfter.toString(), "1");
 });
+
 });
+
+  it("mints a one-of-one receipt on first contribution", async () => {
+    const mintInfo = await getMint(provider.connection, receiptMint);
+
+    assert.equal(mintInfo.supply.toString(), "1");  // exactly one
+    assert.equal(mintInfo.decimals, 0);             // can't split
+    assert.equal(mintInfo.mintAuthority.toBase58(), fundraiser.toBase58()); // authority is the fundraiser PDA
+  });
+
+  it("does not mint a second receipt on second contribution", async () => {
+    const supplyBefore = (await getMint(provider.connection, receiptMint)).supply;
+
+    const vault = getAssociatedTokenAddressSync(mint, fundraiser, true);
+    await program.methods
+      .contribute(new anchor.BN(1000000))
+      .accountsPartial({
+        contributor: provider.publicKey,
+        fundraiser,
+        contributorAccount: contributor,
+        contributorAta: contributorATA,
+        vault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        receiptMint,
+        receiptAta,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const supplyAfter = (await getMint(provider.connection, receiptMint)).supply;
+    assert.equal(supplyAfter.toString(), supplyBefore.toString());
+    assert.equal(supplyAfter.toString(), "1");
+  });
+
+  it("cannot mint a receipt without contributing", async () => {
+    const otherKeypair = anchor.web3.Keypair.generate();
+    const otherReceiptMint = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("receipt"), fundraiser.toBuffer(), otherKeypair.publicKey.toBuffer()],
+      program.programId
+    )[0];
+
+    const account = await provider.connection.getAccountInfo(otherReceiptMint);
+    assert.equal(account, null);
+  });
+});
+
